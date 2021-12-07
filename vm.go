@@ -173,7 +173,7 @@ func (vm *VM) evaluateSnippet(diagnosticFileName ast.DiagnosticFileName, filenam
 			err = fmt.Errorf("(CRASH) %v\n%s", r, debug.Stack())
 		}
 	}()
-	node, err := program.SnippetToAST(diagnosticFileName, filename, snippet)
+	node, err := program.SnippetToAST(diagnosticFileName, filename, snippet, true)
 	if err != nil {
 		return "", err
 	}
@@ -474,7 +474,12 @@ func (vm *VM) ImportAST(importedFrom, importedPath string) (contents ast.Node, f
 
 // SnippetToAST parses a snippet and returns the resulting AST.
 func SnippetToAST(filename string, snippet string) (ast.Node, error) {
-	return program.SnippetToAST(ast.DiagnosticFileName(filename), filename, snippet)
+	return program.SnippetToAST(ast.DiagnosticFileName(filename), filename, snippet, true)
+}
+
+// SnippetToRawAST parses a snippet and returns the resulting AST.
+func SnippetToRawAST(filename string, snippet string) (ast.Node, error) {
+	return program.SnippetToAST(ast.DiagnosticFileName(filename), filename, snippet, false)
 }
 
 // Version returns the Jsonnet version number.

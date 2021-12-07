@@ -125,7 +125,7 @@ func (cache *importCache) importAST(importedFrom, importedPath string) (ast.Node
 	if cachedNode, isCached := cache.astCache[foundAt]; isCached {
 		return cachedNode, foundAt, nil
 	}
-	node, err := program.SnippetToAST(ast.DiagnosticFileName(foundAt), foundAt, contents.String())
+	node, err := program.SnippetToAST(ast.DiagnosticFileName(foundAt), foundAt, contents.String(), true)
 	cache.astCache[foundAt] = node
 	return node, foundAt, err
 }
@@ -140,7 +140,7 @@ func (cache *importCache) importString(importedFrom, importedPath string, i *int
 }
 
 func codeToPV(i *interpreter, filename string, code string) *cachedThunk {
-	node, err := program.SnippetToAST(ast.DiagnosticFileName(filename), "", code)
+	node, err := program.SnippetToAST(ast.DiagnosticFileName(filename), "", code, true)
 	if err != nil {
 		// TODO(sbarzowski) we should wrap (static) error here
 		// within a RuntimeError. Because whether we get this error or not
