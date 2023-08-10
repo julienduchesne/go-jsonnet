@@ -80,6 +80,10 @@ func Benchmark_Builtin_member(b *testing.B) {
 	RunBenchmark(b, "member")
 }
 
+func Benchmark_Builtin_memberLazyEval(b *testing.B) {
+	RunBenchmark(b, "member-lazy")
+}
+
 func Benchmark_Builtin_lstripChars(b *testing.B) {
 	RunBenchmark(b, "lstripChars")
 }

@@ -1170,11 +1170,12 @@ func (i *interpreter) evaluateObject(pv potentialValue) (*valueObject, error) {
 }
 
 func buildStdObject(i *interpreter) (*valueObject, error) {
-	objVal, err := evaluateStd(i)
+	objValInterface, err := evaluateStd(i)
 	if err != nil {
 		return nil, err
 	}
-	obj := objVal.(*valueObject).uncached.(*simpleObject)
+	objVal := objValInterface.(*valueObject)
+	obj := objVal.uncached.(*simpleObject)
 	builtinFields := map[string]unboundField{}
 	for key, ec := range funcBuiltins {
 		function := valueFunction{ec: ec} // TODO(sbarzowski) better way to build function value
@@ -1184,7 +1185,12 @@ func buildStdObject(i *interpreter) (*valueObject, error) {
 	for name, value := range builtinFields {
 		obj.fields[name] = simpleObjectField{value, ast.ObjectFieldHidden}
 	}
-	return objVal.(*valueObject), nil
+
+	if err := i.evaluateJsonnetStdFunctions(objVal); err != nil {
+		return nil, err
+	}
+
+	return objVal, nil
 }
 
 func evaluateStd(i *interpreter) (value, error) {
@@ -1211,6 +1217,33 @@ func evaluateStd(i *interpreter) (value, error) {
 	}
 	stdThunk.content = content
 	return content, nil
+}
+
+func (i *interpreter) evaluateJsonnetStdFunctions(objVal *valueObject) error {
+	stdThunk := &cachedThunk{}
+	stdThunk.content = objVal
+	evalEnv := makeEnvironment(bindingFrame{
+		"std": stdThunk,
+	}, makeUnboundSelfBinding())
+	evalLoc := ast.MakeLocationRangeMessage("During evaluation of std")
+	evalTrace := traceElement{loc: &evalLoc}
+	i.stack.setCurrentTrace(evalTrace)
+	defer i.stack.clearCurrentTrace()
+	obj := objVal.uncached.(*simpleObject)
+
+	for name, funcString := range jsonnetFuncBuiltins {
+		funcAST, err := SnippetToAST(`<std>`, funcString)
+		if err != nil {
+			return fmt.Errorf("Error parsing std func %s: %v", name, err)
+		}
+		funcVal, err := i.EvalInCleanEnv(&evalEnv, funcAST, false)
+		if err != nil {
+			return fmt.Errorf("Error evaluating std function %s: %v", name, err)
+		}
+		obj.fields[name] = simpleObjectField{&readyValue{funcVal}, ast.ObjectFieldHidden}
+	}
+
+	return nil
 }
 
 func prepareExtVars(i *interpreter, ext vmExtMap, kind string) map[string]*cachedThunk {

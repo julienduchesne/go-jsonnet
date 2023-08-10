@@ -2097,12 +2097,12 @@ func builtinAvg(i *interpreter, arrv value) (value, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	len := float64(arr.length())
 	if len == 0 {
 		return nil, i.Error("Cannot calculate average of an empty array.")
 	}
-	
+
 	sumValue, err := builtinSum(i, arrv)
 	if err != nil {
 		return nil, err
@@ -2112,7 +2112,7 @@ func builtinAvg(i *interpreter, arrv value) (value, error) {
 		return nil, err
 	}
 
-	avg := sum.value/len
+	avg := sum.value / len
 	return makeValueNumber(avg), nil
 }
 
@@ -2135,6 +2135,20 @@ func builtinContains(i *interpreter, arrv value, ev value) (value, error) {
 		}
 	}
 	return makeValueBoolean(false), nil
+}
+
+func builtinFormat(i *interpreter, str value, vals value) (value, error) {
+	s, err := i.getString(str)
+	if err != nil {
+		return nil, err
+	}
+	v, err := i.getArray(vals)
+	if err != nil {
+		return nil, err
+	}
+	first, _ := v.elements[0].getValue(i)
+
+	return makeValueString(strings.Replace(s.getGoString(), "%s", first.(valueString).getGoString(), 1)), nil
 }
 
 func builtinRemove(i *interpreter, arrv value, ev value) (value, error) {
@@ -2467,7 +2481,6 @@ var funcBuiltins = buildBuiltinMap([]builtin{
 	&binaryBuiltin{name: "filter", function: builtinFilter, params: ast.Identifiers{"func", "arr"}},
 	&ternaryBuiltin{name: "foldl", function: builtinFoldl, params: ast.Identifiers{"func", "arr", "init"}},
 	&ternaryBuiltin{name: "foldr", function: builtinFoldr, params: ast.Identifiers{"func", "arr", "init"}},
-	&binaryBuiltin{name: "member", function: builtinMember, params: ast.Identifiers{"arr", "x"}},
 	&binaryBuiltin{name: "remove", function: builtinRemove, params: ast.Identifiers{"arr", "elem"}},
 	&binaryBuiltin{name: "removeAt", function: builtinRemoveAt, params: ast.Identifiers{"arr", "i"}},
 	&binaryBuiltin{name: "range", function: builtinRange, params: ast.Identifiers{"from", "to"}},
@@ -2534,7 +2547,16 @@ var funcBuiltins = buildBuiltinMap([]builtin{
 	&unaryBuiltin{name: "sum", function: builtinSum, params: ast.Identifiers{"arr"}},
 	&unaryBuiltin{name: "avg", function: builtinAvg, params: ast.Identifiers{"arr"}},
 	&binaryBuiltin{name: "contains", function: builtinContains, params: ast.Identifiers{"arr", "elem"}},
+	// &binaryBuiltin{name: "format", function: builtinFormat, params: ast.Identifiers{"str", "vals"}},
 
 	// internal
 	&unaryBuiltin{name: "$objectFlatMerge", function: builtinUglyObjectFlatMerge, params: ast.Identifiers{"x"}},
+	&binaryBuiltin{name: "$member", function: builtinMember, params: ast.Identifiers{"arr", "x"}},
 })
+
+var jsonnetFuncBuiltins = map[string]string{
+	"member": `function(arr, x)
+	if std.isArray(arr) && std.length(arr) == 0 then false
+	else std['$member'](arr, x)
+`,
+}
