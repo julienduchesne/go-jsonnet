@@ -22,10 +22,13 @@ A function is considered hermetic if it has no external references that depend o
 
 ### Cache Behavior
 
-- **Global and Thread-Safe**: The cache is a single global map shared across all VM instances and goroutines, protected by a RWMutex
+- **Global and Thread-Safe**: Two global caches, both protected by RWMutex:
+  1. **Function result cache**: Maps (function location + arguments) → result value
+  2. **AST analysis cache**: Maps function location → has-external-refs boolean
 - **Automatic**: No API changes needed - caching happens transparently
 - **Lazy-Evaluation Preserving**: Only caches when arguments are already evaluated (e.g., with `tailstrict`) to preserve Jsonnet's lazy evaluation semantics
 - **Key Generation**: Cache keys are generated from function location (file:line:column) + SHA256 hash of serialized argument values
+- **AST Analysis Cache**: The hermetic detection (checking for `$`, `self`, `super`) is cached per function location, avoiding repeated AST traversals
 
 ### Performance Impact
 

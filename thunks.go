@@ -30,6 +30,10 @@ import (
 var (
 	hermeticFunctionCache      = make(map[string]value)
 	hermeticFunctionCacheMutex sync.RWMutex
+	
+	// Cache for AST analysis results (whether a function has global/self references)
+	astAnalysisCache      = make(map[string]bool)
+	astAnalysisCacheMutex sync.RWMutex
 )
 
 // readyValue
@@ -214,8 +218,23 @@ func (c *closure) isHermetic() bool {
 	}
 
 	// Additionally check for $ references in the AST (global context)
-	fmt.Println("function loc, isHermetic", c.function.LocRange.FileName, c.function.LocRange.Begin.Line, c.function.LocRange.Begin.Column, !hasGlobalOrSelfReference(c.function.Body))
-	return !hasGlobalOrSelfReference(c.function.Body)
+	// Cache the AST analysis result by function location since the AST structure
+	// is immutable and the result will always be the same for a given function
+	loc := c.function.Loc()
+	cacheKey := fmt.Sprintf("%s:%d:%d", loc.FileName, loc.Begin.Line, loc.Begin.Column)
+	
+	astAnalysisCacheMutex.RLock()
+	hasRefs, found := astAnalysisCache[cacheKey]
+	astAnalysisCacheMutex.RUnlock()
+	
+	if !found {
+		hasRefs = hasGlobalOrSelfReference(c.function.Body)
+		astAnalysisCacheMutex.Lock()
+		astAnalysisCache[cacheKey] = hasRefs
+		astAnalysisCacheMutex.Unlock()
+	}
+	
+	return !hasRefs
 }
 
 // hasGlobalOrSelfReference does a deep traversal to check for $ or self references
