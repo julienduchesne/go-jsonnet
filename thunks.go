@@ -206,17 +206,6 @@ type closure struct {
 // This is a conservative check: even hermetic captured values (like external
 // constants) are treated as non-hermetic to keep the implementation simple.
 func (c *closure) isHermetic() bool {
-	// Simple heuristic: check if there are any captured variables or self binding
-	// If upValues is not empty, the function captures external context
-	if len(c.env.upValues) > 0 {
-		return false
-	}
-
-	// If there's a self binding, the function has access to object context
-	if c.env.selfBinding.self != nil {
-		return false
-	}
-
 	isHermetic := !hasGlobalOrSelfReference(c.function.Body)
 	fmt.Println("loc, isHermetic", c.function.Body.Loc().FileName, c.function.Body.Loc().Begin.Line, c.function.Body.Loc().Begin.Column, isHermetic)
 	return isHermetic
