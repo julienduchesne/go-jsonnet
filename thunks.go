@@ -217,24 +217,8 @@ func (c *closure) isHermetic() bool {
 		return false
 	}
 
-	// Additionally check for $ references in the AST (global context)
-	// Cache the AST analysis result by function location since the AST structure
-	// is immutable and the result will always be the same for a given function
-	loc := c.function.Loc()
-	cacheKey := fmt.Sprintf("%s:%d:%d", loc.FileName, loc.Begin.Line, loc.Begin.Column)
-
-	astAnalysisCacheMutex.RLock()
-	hasRefs, found := astAnalysisCache[cacheKey]
-	astAnalysisCacheMutex.RUnlock()
-
-	if !found {
-		hasRefs = hasGlobalOrSelfReference(c.function.Body)
-		astAnalysisCacheMutex.Lock()
-		astAnalysisCache[cacheKey] = hasRefs
-		astAnalysisCacheMutex.Unlock()
-	}
-
-	return !hasRefs
+	fmt.Println("loc, isHermetic", c.function.LocRange.FileName, c.function.LocRange.Begin.Line, c.function.LocRange.Begin.Column, !hasGlobalOrSelfReference(c.function.Body))
+	return !hasGlobalOrSelfReference(c.function.Body)
 }
 
 // hasGlobalOrSelfReference does a deep traversal to check for $ or self references
@@ -243,27 +227,55 @@ func hasGlobalOrSelfReference(node ast.Node) bool {
 		return false
 	}
 
+	// Additionally check for $ references in the AST (global context)
+	// Cache the AST analysis result by function location since the AST structure
+	// is immutable and the result will always be the same for a given function
+	loc := node.Loc()
+	cacheKey := fmt.Sprintf("%s:%d:%d", loc.FileName, loc.Begin.Line, loc.Begin.Column)
+
+	astAnalysisCacheMutex.RLock()
+	hasRefs, found := astAnalysisCache[cacheKey]
+	astAnalysisCacheMutex.RUnlock()
+	if found {
+		return hasRefs
+	}
+
 	switch n := node.(type) {
 	case *ast.Var:
 		// Check for $ (global context) or self
 		if n.Id == "$" {
+			astAnalysisCacheMutex.Lock()
+			astAnalysisCache[cacheKey] = true
+			astAnalysisCacheMutex.Unlock()
 			return true
 		}
 	case *ast.Self:
 		// Direct self reference
+		astAnalysisCacheMutex.Lock()
+		astAnalysisCache[cacheKey] = true
+		astAnalysisCacheMutex.Unlock()
 		return true
 	case *ast.SuperIndex, *ast.InSuper:
 		// Super implies object context
+		astAnalysisCacheMutex.Lock()
+		astAnalysisCache[cacheKey] = true
+		astAnalysisCacheMutex.Unlock()
 		return true
 	}
 
 	// Recursively check all children
 	for _, child := range toolutils.Children(node) {
 		if hasGlobalOrSelfReference(child) {
+			astAnalysisCacheMutex.Lock()
+			astAnalysisCache[cacheKey] = true
+			astAnalysisCacheMutex.Unlock()
 			return true
 		}
 	}
 
+	astAnalysisCacheMutex.Lock()
+	astAnalysisCache[cacheKey] = false
+	astAnalysisCacheMutex.Unlock()
 	return false
 }
 
