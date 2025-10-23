@@ -108,7 +108,7 @@ type codeUnboundField struct {
 }
 
 func (f *codeUnboundField) evaluate(i *interpreter, sb selfBinding, origBindings bindingFrame, fieldName string) (value, error) {
-	env := makeEnvironment(origBindings, sb)
+	env := makeEnvironment(origBindings, sb, f.body.Loc().FileName)
 	val, err := i.EvalInCleanEnv(&env, f.body, false)
 	return val, err
 }
@@ -196,85 +196,101 @@ type closure struct {
 	params   []namedParameter
 }
 
+// getFunctionID generates a unique identifier for this function based on its body's location.
+// Returns empty string if the function cannot be cached (e.g., no filename).
+func (c *closure) getFunctionID() string {
+	// Use the function body's location instead of the function's location
+	// because that's where the actual filename is stored
+	loc := c.function.Body.Loc()
+	filename := loc.FileName
+	if filename == "" {
+		filename = c.env.filename
+	}
+	// Can only cache if we have a valid filename to avoid collisions
+	if filename == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d:%d", filename, loc.Begin.Line, loc.Begin.Column)
+}
+
 // isHermetic returns true if the closure has no external references.
-// A function is hermetic if its body doesn't reference:
-//   - $ (global/root context)
-//   - self (object context)
-//   - super (parent object context)
-//   - captured variables from enclosing scope (in upValues)
+// A function is hermetic if:
+//  1. It can be uniquely identified (has a valid filename)
+//  2. Its body doesn't reference $ (global/root context) or self/super (object context)
 //
 // This is a conservative check: even hermetic captured values (like external
 // constants) are treated as non-hermetic to keep the implementation simple.
 func (c *closure) isHermetic() bool {
-	isHermetic := !hasGlobalOrSelfReference(c.function.Body)
-	fmt.Println("loc, isHermetic", c.function.Body.Loc().FileName, c.function.Body.Loc().Begin.Line, c.function.Body.Loc().Begin.Column, isHermetic)
-	return isHermetic
+	// Calculate function ID once and pass it through
+	funcID := c.getFunctionID()
+	// Must have a valid function ID to be cacheable
+	if funcID == "" {
+		return false
+	}
+	return !c.hasGlobalOrSelfReference(c.function.Body, funcID)
 }
 
 // hasGlobalOrSelfReference does a deep traversal to check for $ or self references
-func hasGlobalOrSelfReference(node ast.Node) bool {
+// funcID is the pre-calculated function ID for caching purposes
+func (c *closure) hasGlobalOrSelfReference(node ast.Node, funcID string) bool {
 	if node == nil {
 		return false
 	}
 
-	// Additionally check for $ references in the AST (global context)
-	// Cache the AST analysis result by function location since the AST structure
-	// is immutable and the result will always be the same for a given function
-	loc := node.Loc()
-	cacheKey := fmt.Sprintf("%s:%d:%d", loc.FileName, loc.Begin.Line, loc.Begin.Column)
-
-	astAnalysisCacheMutex.RLock()
-	hasRefs, found := astAnalysisCache[cacheKey]
-	astAnalysisCacheMutex.RUnlock()
-	if found {
-		return hasRefs
+	// Check cache for AST analysis result (only if we have a valid funcID)
+	if funcID != "" {
+		astAnalysisCacheMutex.RLock()
+		cached, found := astAnalysisCache[funcID]
+		astAnalysisCacheMutex.RUnlock()
+		if found {
+			return cached
+		}
 	}
 
+	hasRefs := false
 	switch n := node.(type) {
 	case *ast.Var:
 		// Check for $ (global context) or self
 		if n.Id == "$" {
-			astAnalysisCacheMutex.Lock()
-			astAnalysisCache[cacheKey] = true
-			astAnalysisCacheMutex.Unlock()
-			return true
+			hasRefs = true
 		}
 	case *ast.Self:
 		// Direct self reference
-		astAnalysisCacheMutex.Lock()
-		astAnalysisCache[cacheKey] = true
-		astAnalysisCacheMutex.Unlock()
-		return true
+		hasRefs = true
 	case *ast.SuperIndex, *ast.InSuper:
 		// Super implies object context
-		astAnalysisCacheMutex.Lock()
-		astAnalysisCache[cacheKey] = true
-		astAnalysisCacheMutex.Unlock()
-		return true
+		hasRefs = true
 	}
 
 	// Recursively check all children
-	for _, child := range toolutils.Children(node) {
-		if hasGlobalOrSelfReference(child) {
-			astAnalysisCacheMutex.Lock()
-			astAnalysisCache[cacheKey] = true
-			astAnalysisCacheMutex.Unlock()
-			return true
+	if !hasRefs {
+		for _, child := range toolutils.Children(node) {
+			if c.hasGlobalOrSelfReference(child, funcID) {
+				hasRefs = true
+				break
+			}
 		}
 	}
 
-	astAnalysisCacheMutex.Lock()
-	astAnalysisCache[cacheKey] = false
-	astAnalysisCacheMutex.Unlock()
-	return false
+	// Cache result if we have a valid funcID
+	if funcID != "" {
+		astAnalysisCacheMutex.Lock()
+		astAnalysisCache[funcID] = hasRefs
+		astAnalysisCacheMutex.Unlock()
+	}
+
+	fmt.Println("hasGlobalOrSelfReference", funcID, hasRefs)
+	return hasRefs
 }
 
 // generateCacheKey creates a cache key for a hermetic function call
 // This requires all thunks to be already evaluated (content != nil)
 func (c *closure) generateCacheKey(i *interpreter, argThunks bindingFrame) (string, error) {
-	// Use function location as identifier
-	loc := c.function.Loc()
-	funcID := fmt.Sprintf("%s:%d:%d", loc.FileName, loc.Begin.Line, loc.Begin.Column)
+	// Get function ID (will be empty if no valid filename)
+	funcID := c.getFunctionID()
+	if funcID == "" {
+		return "", fmt.Errorf("cannot generate cache key without valid function ID")
+	}
 
 	// Serialize arguments - only if already evaluated
 	argMap := make(map[string]interface{})
@@ -361,6 +377,7 @@ func (closure *closure) evalCall(arguments callArguments, i *interpreter) (value
 			calledEnvironment = makeEnvironment(
 				addBindings(closure.env.upValues, argThunks),
 				closure.env.selfBinding,
+				closure.env.filename,
 			)
 			result, err := i.EvalInCleanEnv(&calledEnvironment, closure.function.Body, arguments.tailstrict)
 			if err != nil {
@@ -380,6 +397,7 @@ func (closure *closure) evalCall(arguments callArguments, i *interpreter) (value
 	calledEnvironment = makeEnvironment(
 		addBindings(closure.env.upValues, argThunks),
 		closure.env.selfBinding,
+		closure.env.filename,
 	)
 	return i.EvalInCleanEnv(&calledEnvironment, closure.function.Body, arguments.tailstrict)
 }

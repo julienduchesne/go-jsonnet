@@ -310,6 +310,15 @@ func updateMultifileGolden(path string, result jsonnetResult) ([]string, error) 
 }
 
 func runTest(t *testing.T, test *mainTest) {
+	// Clear hermetic caches before each test to avoid interference
+	hermeticFunctionCacheMutex.Lock()
+	hermeticFunctionCache = make(map[string]value)
+	hermeticFunctionCacheMutex.Unlock()
+
+	astAnalysisCacheMutex.Lock()
+	astAnalysisCache = make(map[string]bool)
+	astAnalysisCacheMutex.Unlock()
+
 	read := func(file string) []byte {
 		bytz, err := os.ReadFile(file)
 		if err != nil {

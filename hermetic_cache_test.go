@@ -5,7 +5,7 @@ import (
 )
 
 func TestHermeticFunctionCache(t *testing.T) {
-	// Test that hermetic functions are cached with tailstrict
+	// Test that hermetic functions are cached with tailstrict when evaluating files
 	vm := MakeVM()
 
 	// Clear cache
@@ -13,20 +13,8 @@ func TestHermeticFunctionCache(t *testing.T) {
 	hermeticFunctionCache = make(map[string]value)
 	hermeticFunctionCacheMutex.Unlock()
 
-	// Create a Jsonnet snippet with a hermetic function called with tailstrict
-	// tailstrict forces argument evaluation, enabling caching
-	snippet := `
-local expensiveFunction(x) = x * x;
-{
-	a: std.assertEqual(expensiveFunction(5) tailstrict, 25),
-	b: std.assertEqual(expensiveFunction(5) tailstrict, 25),  // Should hit cache
-	c: std.assertEqual(expensiveFunction(10) tailstrict, 100),
-	d: std.assertEqual(expensiveFunction(10) tailstrict, 100), // Should hit cache
-	result: true
-}
-`
-
-	result, err := vm.EvaluateAnonymousSnippet("test.jsonnet", snippet)
+	// Use a real file (not anonymous snippet) so functions can be uniquely identified
+	result, err := vm.EvaluateFile("testdata/hermetic_cache_test.jsonnet")
 	if err != nil {
 		t.Fatalf("Evaluation failed: %v", err)
 	}
@@ -100,12 +88,8 @@ func TestHermeticFunctionCacheAcrossEvaluations(t *testing.T) {
 	hermeticFunctionCacheMutex.Unlock()
 
 	vm1 := MakeVM()
-	snippet := `
-local f(x) = x * x * x;
-f(7) tailstrict
-`
 
-	result1, err := vm1.EvaluateAnonymousSnippet("test1.jsonnet", snippet)
+	result1, err := vm1.EvaluateFile("testdata/hermetic_cache_across.jsonnet")
 	if err != nil {
 		t.Fatalf("First evaluation failed: %v", err)
 	}
@@ -127,7 +111,7 @@ f(7) tailstrict
 
 	// Now evaluate with a different VM - should still use the same global cache
 	vm2 := MakeVM()
-	result2, err := vm2.EvaluateAnonymousSnippet("test2.jsonnet", snippet)
+	result2, err := vm2.EvaluateFile("testdata/hermetic_cache_across.jsonnet")
 	if err != nil {
 		t.Fatalf("Second evaluation failed: %v", err)
 	}

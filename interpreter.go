@@ -40,12 +40,14 @@ type environment struct {
 	// previous bindings will be used.
 	upValues    bindingFrame
 	selfBinding selfBinding
+	filename    string
 }
 
-func makeEnvironment(upValues bindingFrame, sb selfBinding) environment {
+func makeEnvironment(upValues bindingFrame, sb selfBinding, filename string) environment {
 	return environment{
 		upValues:    upValues,
 		selfBinding: sb,
+		filename:    filename,
 	}
 }
 
@@ -177,7 +179,7 @@ func (s *callStack) newCall(env environment, trimmable bool) {
 
 func (s *callStack) newLocal(vars bindingFrame) {
 	s.stack = append(s.stack, &callFrame{
-		env:   makeEnvironment(vars, selfBinding{}),
+		env:   makeEnvironment(vars, selfBinding{}, s.currentTrace.loc.FileName),
 		trace: s.currentTrace,
 	})
 	s.clearCurrentTrace()
@@ -234,6 +236,7 @@ func (s *callStack) getCurrentEnv(ast ast.Node) environment {
 	return makeEnvironment(
 		s.capture(ast.FreeVariables()),
 		s.getSelfBinding(),
+		s.currentTrace.loc.FileName,
 	)
 }
 
@@ -329,7 +332,7 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error) 
 		sb := i.stack.getSelfBinding()
 		var elements []*cachedThunk
 		for _, el := range node.Elements {
-			env := makeEnvironment(i.stack.capture(el.Expr.FreeVariables()), sb)
+			env := makeEnvironment(i.stack.capture(el.Expr.FreeVariables()), sb, i.stack.currentTrace.loc.FileName)
 			elThunk := cachedThunk{env: &env, body: el.Expr}
 			elements = append(elements, &elThunk)
 		}
@@ -1235,6 +1238,7 @@ func evaluateStd(i *interpreter) (value, error) {
 			"$std": stdThunk,
 		},
 		makeUnboundSelfBinding(),
+		"<std>",
 	)
 	evalLoc := ast.MakeLocationRangeMessage("During evaluation of std")
 	evalTrace := traceElement{loc: &evalLoc}
@@ -1307,6 +1311,7 @@ func makeInitialEnv(filename string, baseStd *valueObject) environment {
 			"$std": stdThunk, // Unavailable to the user. To be used with desugaring.
 		},
 		makeUnboundSelfBinding(),
+		filename,
 	)
 }
 
