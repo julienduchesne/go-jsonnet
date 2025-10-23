@@ -239,6 +239,9 @@ func (s *callStack) getCurrentEnv(ast ast.Node) environment {
 
 // Build a binding frame containing specified variables.
 func (s *callStack) capture(freeVars ast.Identifiers) bindingFrame {
+	if len(freeVars) == 0 {
+		return bindingFrame{}
+	}
 	env := make(bindingFrame, len(freeVars))
 	for _, fv := range freeVars {
 		env[fv] = s.lookUpVarOrPanic(fv)
@@ -285,7 +288,15 @@ type interpreter struct {
 
 // Map union, b takes precedence when keys collide.
 func addBindings(a, b bindingFrame) bindingFrame {
-	result := make(bindingFrame, len(a))
+	// Fast paths for empty inputs - avoid allocation
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+
+	result := make(bindingFrame, len(a)+len(b))
 
 	for k, v := range a {
 		result[k] = v

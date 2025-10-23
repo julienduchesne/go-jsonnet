@@ -680,7 +680,12 @@ func findField(curr uncachedObject, minSuperDepth int, f string) (bool, simpleOb
 }
 
 func prepareFieldUpvalues(sb selfBinding, upValues bindingFrame, locals []objectLocal) bindingFrame {
-	newUpValues := make(bindingFrame, len(upValues))
+	// Fast path: no locals means we can reuse the upValues
+	if len(locals) == 0 {
+		return upValues
+	}
+
+	newUpValues := make(bindingFrame, len(upValues)+len(locals))
 	for k, v := range upValues {
 		newUpValues[k] = v
 	}

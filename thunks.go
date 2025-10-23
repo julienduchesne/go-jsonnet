@@ -78,9 +78,10 @@ func (t *cachedThunk) getValue(i *interpreter) (value, error) {
 		return nil, err
 	}
 	t.content = v
-	// No need to keep the environment around anymore.
+	// No need to keep the environment and AST around anymore.
 	// So, this might reduce memory pressure:
 	t.env = nil
+	t.body = nil
 	return v, nil
 }
 
