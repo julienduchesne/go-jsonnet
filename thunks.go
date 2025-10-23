@@ -217,8 +217,9 @@ func (c *closure) isHermetic() bool {
 		return false
 	}
 
-	fmt.Println("loc, isHermetic", c.function.Body.Loc().FileName, c.function.Body.Loc().Begin.Line, c.function.Body.Loc().Begin.Column, !hasGlobalOrSelfReference(c.function.Body))
-	return !hasGlobalOrSelfReference(c.function.Body)
+	isHermetic := !hasGlobalOrSelfReference(c.function.Body)
+	fmt.Println("loc, isHermetic", c.function.Body.Loc().FileName, c.function.Body.Loc().Begin.Line, c.function.Body.Loc().Begin.Column, isHermetic)
+	return isHermetic
 }
 
 // hasGlobalOrSelfReference does a deep traversal to check for $ or self references
