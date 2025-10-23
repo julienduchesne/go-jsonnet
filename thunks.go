@@ -17,9 +17,18 @@ limitations under the License.
 package jsonnet
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/google/go-jsonnet/ast"
+)
+
+// Global cache for hermetic function calls
+var (
+	hermeticFunctionCache      = make(map[string]value)
+	hermeticFunctionCacheMutex sync.RWMutex
 )
 
 // readyValue
@@ -182,6 +191,48 @@ type closure struct {
 	params   []namedParameter
 }
 
+// isHermetic returns true if the closure has no external references
+func (c *closure) isHermetic() bool {
+	// A function is hermetic if:
+	// 1. It has no captured variables (empty upValues)
+	// 2. It has no self binding
+	return len(c.env.upValues) == 0 && c.env.selfBinding.self == nil
+}
+
+// generateCacheKey creates a cache key for a hermetic function call
+// This requires all thunks to be already evaluated (content != nil)
+func (c *closure) generateCacheKey(i *interpreter, argThunks bindingFrame) (string, error) {
+	// Use function location as identifier
+	loc := c.function.Loc()
+	funcID := fmt.Sprintf("%s:%d:%d", loc.FileName, loc.Begin.Line, loc.Begin.Column)
+
+	// Serialize arguments - only if already evaluated
+	argMap := make(map[string]interface{})
+	for name, thunk := range argThunks {
+		// Only use cached values, don't trigger evaluation
+		if thunk.content == nil {
+			// If any arg is not evaluated yet, we can't cache
+			return "", fmt.Errorf("cache key generation requires evaluated arguments")
+		}
+
+		// Convert to JSON for consistent serialization
+		jsonVal, err := i.manifestJSON(thunk.content)
+		if err != nil {
+			return "", err
+		}
+		argMap[string(name)] = jsonVal
+	}
+
+	argBytes, err := json.Marshal(argMap)
+	if err != nil {
+		return "", err
+	}
+
+	// Create hash of function ID and arguments
+	hash := sha256.Sum256([]byte(funcID + string(argBytes)))
+	return fmt.Sprintf("%x", hash), nil
+}
+
 func forceThunks(i *interpreter, args *bindingFrame) error {
 	for _, arg := range *args {
 		_, err := arg.getValue(i)
@@ -220,6 +271,40 @@ func (closure *closure) evalCall(arguments callArguments, i *interpreter) (value
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// Check if function is hermetic and use cache
+	// Only use caching when all arguments are already evaluated (to preserve lazy semantics)
+	if closure.isHermetic() {
+		// Try to generate cache key (will fail if any args aren't evaluated yet)
+		cacheKey, err := closure.generateCacheKey(i, argThunks)
+		if err == nil {
+			// Check cache
+			hermeticFunctionCacheMutex.RLock()
+			if cachedValue, found := hermeticFunctionCache[cacheKey]; found {
+				hermeticFunctionCacheMutex.RUnlock()
+				return cachedValue, nil
+			}
+			hermeticFunctionCacheMutex.RUnlock()
+
+			// Cache miss, evaluate
+			calledEnvironment = makeEnvironment(
+				addBindings(closure.env.upValues, argThunks),
+				closure.env.selfBinding,
+			)
+			result, err := i.EvalInCleanEnv(&calledEnvironment, closure.function.Body, arguments.tailstrict)
+			if err != nil {
+				return nil, err
+			}
+
+			// Store in cache
+			hermeticFunctionCacheMutex.Lock()
+			hermeticFunctionCache[cacheKey] = result
+			hermeticFunctionCacheMutex.Unlock()
+
+			return result, nil
+		}
+		// If cache key generation failed (args not evaluated), fall through to normal evaluation
 	}
 
 	calledEnvironment = makeEnvironment(
