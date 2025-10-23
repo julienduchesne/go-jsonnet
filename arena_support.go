@@ -3,7 +3,6 @@
 package jsonnet
 
 import (
-	"arena"
 	"bytes"
 	"io"
 
@@ -14,14 +13,15 @@ import (
 func evaluateWithArenaSupport(node ast.Node, ext vmExtMap, tla vmExtMap, nativeFuncs map[string]*NativeFunction,
 	maxStack int, ic *importCache, traceOut io.Writer, stringOutputMode bool, evalHook EvalHook) (string, error) {
 
-	// Create arena for this evaluation
-	a := arena.NewArena()
-	defer a.Free() // Bulk free all evaluation objects!
+	// Create arena allocator for this evaluation
+	arenaAlloc := newArenaAllocator()
+	defer arenaAlloc.Free() // Bulk free all evaluation objects!
 
 	i, err := buildInterpreter(ext, nativeFuncs, maxStack, ic, traceOut, evalHook)
 	if err != nil {
 		return "", err
 	}
+	i.arena = arenaAlloc // Attach arena to interpreter
 
 	result, err := evaluateAux(i, node, tla)
 	if err != nil {
@@ -49,13 +49,14 @@ func evaluateWithArenaSupport(node ast.Node, ext vmExtMap, tla vmExtMap, nativeF
 func evaluateMultiWithArenaSupport(node ast.Node, ext vmExtMap, tla vmExtMap, nativeFuncs map[string]*NativeFunction,
 	maxStack int, ic *importCache, traceOut io.Writer, stringOutputMode bool, evalHook EvalHook) (map[string]string, error) {
 
-	a := arena.NewArena()
-	defer a.Free()
+	arenaAlloc := newArenaAllocator()
+	defer arenaAlloc.Free()
 
 	i, err := buildInterpreter(ext, nativeFuncs, maxStack, ic, traceOut, evalHook)
 	if err != nil {
 		return nil, err
 	}
+	i.arena = arenaAlloc
 
 	result, err := evaluateAux(i, node, tla)
 	if err != nil {
@@ -71,13 +72,14 @@ func evaluateMultiWithArenaSupport(node ast.Node, ext vmExtMap, tla vmExtMap, na
 func evaluateStreamWithArenaSupport(node ast.Node, ext vmExtMap, tla vmExtMap, nativeFuncs map[string]*NativeFunction,
 	maxStack int, ic *importCache, traceOut io.Writer, evalHook EvalHook) ([]string, error) {
 
-	a := arena.NewArena()
-	defer a.Free()
+	arenaAlloc := newArenaAllocator()
+	defer arenaAlloc.Free()
 
 	i, err := buildInterpreter(ext, nativeFuncs, maxStack, ic, traceOut, evalHook)
 	if err != nil {
 		return nil, err
 	}
+	i.arena = arenaAlloc
 
 	result, err := evaluateAux(i, node, tla)
 	if err != nil {

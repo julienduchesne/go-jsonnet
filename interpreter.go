@@ -161,25 +161,40 @@ const (
 	tailCall
 )
 
-func (s *callStack) newCall(env environment, trimmable bool) {
+func (s *callStack) newCall(env environment, trimmable bool, arena *arenaAllocator) {
 	if s.currentTrace == (traceElement{}) {
 		panic("Saving empty traceElement on stack")
 	}
-	s.stack = append(s.stack, &callFrame{
-		cleanEnv:  true,
-		trace:     s.currentTrace,
-		env:       env,
-		trimmable: trimmable,
-	})
+
+	var frame *callFrame
+	if arena != nil {
+		frame = arena.newCallFrame()
+	} else {
+		frame = &callFrame{}
+	}
+
+	frame.cleanEnv = true
+	frame.trace = s.currentTrace
+	frame.env = env
+	frame.trimmable = trimmable
+
+	s.stack = append(s.stack, frame)
 	s.clearCurrentTrace()
 	s.calls++
 }
 
-func (s *callStack) newLocal(vars bindingFrame) {
-	s.stack = append(s.stack, &callFrame{
-		env:   makeEnvironment(vars, selfBinding{}),
-		trace: s.currentTrace,
-	})
+func (s *callStack) newLocal(vars bindingFrame, arena *arenaAllocator) {
+	var frame *callFrame
+	if arena != nil {
+		frame = arena.newCallFrame()
+	} else {
+		frame = &callFrame{}
+	}
+
+	frame.env = makeEnvironment(vars, selfBinding{})
+	frame.trace = s.currentTrace
+
+	s.stack = append(s.stack, frame)
 	s.clearCurrentTrace()
 }
 
@@ -281,6 +296,9 @@ type interpreter struct {
 	stack callStack
 
 	evalHook EvalHook
+
+	// Arena allocator for evaluation objects (with GOEXPERIMENT=arenas)
+	arena *arenaAllocator
 }
 
 // Map union, b takes precedence when keys collide.
@@ -303,7 +321,7 @@ func (i *interpreter) newCall(env environment, trimmable bool) error {
 	if s.calls >= s.limit {
 		return makeRuntimeError("max stack frames exceeded.", i.getCurrentStackTrace())
 	}
-	s.newCall(env, trimmable)
+	s.newCall(env, trimmable, i.arena)
 	return nil
 }
 
@@ -520,9 +538,15 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error) 
 		return i.importCache.importBinary(codePath, node.File.Value, i)
 
 	case *ast.LiteralBoolean:
+		if i.arena != nil {
+			return i.arena.newValueBoolean(node.Value), nil
+		}
 		return makeValueBoolean(node.Value), nil
 
 	case *ast.LiteralNull:
+		if i.arena != nil {
+			return i.arena.newValueNull(), nil
+		}
 		return makeValueNull(), nil
 
 	case *ast.LiteralNumber:
@@ -533,9 +557,15 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error) 
 		if err != nil {
 			return nil, i.Error("overflow")
 		}
+		if i.arena != nil {
+			return i.arena.newValueNumber(num), nil
+		}
 		return makeValueNumber(num), nil
 
 	case *ast.LiteralString:
+		if i.arena != nil {
+			return i.arena.newValueString([]rune(node.Value)), nil
+		}
 		return makeValueString(node.Value), nil
 
 	case *ast.Local:
@@ -548,7 +578,7 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error) 
 			vars[bind.Variable] = &th
 			bindEnv.upValues[bind.Variable] = &th
 		}
-		i.stack.newLocal(vars)
+		i.stack.newLocal(vars, i.arena)
 		sz := len(i.stack.stack)
 		// Add new stack frame, with new thunk for this variable
 		// execute body WRT stack frame.
