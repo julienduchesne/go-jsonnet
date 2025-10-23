@@ -58,15 +58,26 @@ local expensiveFunction(x) = x * x;
 ### Limitations
 
 - Only works when arguments are already evaluated (e.g., with `tailstrict`)
-- Cache never expires or gets cleared (simple implementation as requested)
-- Non-hermetic functions (those with captured variables) are never cached
+- Cache never expires or gets cleared (simple global map implementation)
+- Non-hermetic functions are never cached:
+  - Functions with captured variables from enclosing scope
+  - Functions referencing `$`, `self`, or `super`
+  - Functions in object methods (have self binding)
+- Conservative: functions capturing external constant locals are also not cached (could be improved in future)
 
 ### Testing
 
 All existing tests pass. Added specific tests:
-- `TestHermeticFunctionCache`: Verifies cache works for hermetic functions
+- `TestHermeticFunctionCache`: Verifies cache works for hermetic functions with tailstrict
 - `TestNonHermeticFunctionNotCached`: Ensures non-hermetic functions aren't cached
-- `TestHermeticFunctionCacheAcrossEvaluations`: Confirms cache is shared globally
+- `TestHermeticFunctionCacheAcrossEvaluations`: Confirms cache is shared globally across VM instances
+- `TestHermeticDetection`: Comprehensive tests for detecting hermetic vs non-hermetic functions:
+  - Pure functions (no external refs) ✓ cached
+  - Functions with `$` reference ✗ not cached
+  - Functions with `self` reference ✗ not cached
+  - Functions with `super` reference ✗ not cached
+  - Functions with external constants ✗ not cached (conservative)
+- `TestContextDependentCapture`: Tests `local this = self;` pattern correctly not cached
 
 Run tests: `go test ./...`
 Run benchmarks: `go test -bench=BenchmarkHermeticFunction`

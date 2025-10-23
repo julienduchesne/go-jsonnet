@@ -192,11 +192,15 @@ type closure struct {
 	params   []namedParameter
 }
 
-// isHermetic returns true if the closure has no external references
+// isHermetic returns true if the closure has no external references.
 // A function is hermetic if its body doesn't reference:
-// - $ (global context)
-// - self (object context)
-// - captured variables that depend on context
+//   - $ (global/root context)
+//   - self (object context)
+//   - super (parent object context)
+//   - captured variables from enclosing scope (in upValues)
+//
+// This is a conservative check: even hermetic captured values (like external
+// constants) are treated as non-hermetic to keep the implementation simple.
 func (c *closure) isHermetic() bool {
 	// Simple heuristic: check if there are any captured variables or self binding
 	// If upValues is not empty, the function captures external context
@@ -210,6 +214,7 @@ func (c *closure) isHermetic() bool {
 	}
 
 	// Additionally check for $ references in the AST (global context)
+	fmt.Println("function loc, isHermetic", c.function.LocRange.FileName, c.function.LocRange.Begin.Line, c.function.LocRange.Begin.Column, !hasGlobalOrSelfReference(c.function.Body))
 	return !hasGlobalOrSelfReference(c.function.Body)
 }
 
