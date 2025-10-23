@@ -1354,67 +1354,21 @@ func evaluateAux(i *interpreter, node ast.Node, tla vmExtMap) (value, error) {
 func evaluate(node ast.Node, ext vmExtMap, tla vmExtMap, nativeFuncs map[string]*NativeFunction,
 	maxStack int, ic *importCache, traceOut io.Writer, stringOutputMode bool, evalHook EvalHook) (string, error) {
 
-	i, err := buildInterpreter(ext, nativeFuncs, maxStack, ic, traceOut, evalHook)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := evaluateAux(i, node, tla)
-	if err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-	i.stack.setCurrentTrace(manifestationTrace())
-	if stringOutputMode {
-		err = i.manifestString(&buf, result)
-	} else {
-		err = i.manifestAndSerializeJSON(&buf, result, true, "")
-	}
-	i.stack.clearCurrentTrace()
-	if err != nil {
-		return "", err
-	}
-	buf.WriteString("\n")
-	return buf.String(), nil
+	// Use arena allocation if available (GOEXPERIMENT=arenas)
+	// Falls back gracefully if not available
+	return evaluateWithArenaSupport(node, ext, tla, nativeFuncs, maxStack, ic, traceOut, stringOutputMode, evalHook)
 }
 
 // TODO(sbarzowski) this function takes far too many arguments - build interpreter in vm instead
 func evaluateMulti(node ast.Node, ext vmExtMap, tla vmExtMap, nativeFuncs map[string]*NativeFunction,
 	maxStack int, ic *importCache, traceOut io.Writer, stringOutputMode bool, evalHook EvalHook) (map[string]string, error) {
 
-	i, err := buildInterpreter(ext, nativeFuncs, maxStack, ic, traceOut, evalHook)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := evaluateAux(i, node, tla)
-	if err != nil {
-		return nil, err
-	}
-
-	i.stack.setCurrentTrace(manifestationTrace())
-	manifested, err := i.manifestAndSerializeMulti(result, stringOutputMode)
-	i.stack.clearCurrentTrace()
-	return manifested, err
+	return evaluateMultiWithArenaSupport(node, ext, tla, nativeFuncs, maxStack, ic, traceOut, stringOutputMode, evalHook)
 }
 
 // TODO(sbarzowski) this function takes far too many arguments - build interpreter in vm instead
 func evaluateStream(node ast.Node, ext vmExtMap, tla vmExtMap, nativeFuncs map[string]*NativeFunction,
 	maxStack int, ic *importCache, traceOut io.Writer, evalHook EvalHook) ([]string, error) {
 
-	i, err := buildInterpreter(ext, nativeFuncs, maxStack, ic, traceOut, evalHook)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := evaluateAux(i, node, tla)
-	if err != nil {
-		return nil, err
-	}
-
-	i.stack.setCurrentTrace(manifestationTrace())
-	manifested, err := i.manifestAndSerializeYAMLStream(result)
-	i.stack.clearCurrentTrace()
-	return manifested, err
+	return evaluateStreamWithArenaSupport(node, ext, tla, nativeFuncs, maxStack, ic, traceOut, evalHook)
 }
