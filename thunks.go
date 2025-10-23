@@ -217,7 +217,7 @@ func (c *closure) isHermetic() bool {
 		return false
 	}
 
-	fmt.Println("loc, isHermetic", c.function.LocRange.FileName, c.function.LocRange.Begin.Line, c.function.LocRange.Begin.Column, !hasGlobalOrSelfReference(c.function.Body))
+	fmt.Println("loc, isHermetic", c.function.Body.Loc().FileName, c.function.Body.Loc().Begin.Line, c.function.Body.Loc().Begin.Column, !hasGlobalOrSelfReference(c.function.Body))
 	return !hasGlobalOrSelfReference(c.function.Body)
 }
 
