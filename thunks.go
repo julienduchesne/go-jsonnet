@@ -193,10 +193,10 @@ type closure struct {
 
 // isHermetic returns true if the closure has no external references
 func (c *closure) isHermetic() bool {
-	// A function is hermetic if:
-	// 1. It has no captured variables (empty upValues)
-	// 2. It has no self binding
-	return len(c.env.upValues) == 0 && c.env.selfBinding.self == nil
+	// log function name
+	hermetic := len(c.env.upValues) == 0 && c.env.selfBinding.self == nil
+	fmt.Println("function body, isHermetic", c.function.Body, hermetic)
+	return hermetic
 }
 
 // generateCacheKey creates a cache key for a hermetic function call
