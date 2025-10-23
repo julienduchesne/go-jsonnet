@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/google/go-jsonnet/ast"
+	"github.com/google/go-jsonnet/toolutils"
 )
 
 // Global cache for hermetic function calls
@@ -192,11 +193,54 @@ type closure struct {
 }
 
 // isHermetic returns true if the closure has no external references
+// A function is hermetic if its body doesn't reference:
+// - $ (global context)
+// - self (object context)
+// - captured variables that depend on context
 func (c *closure) isHermetic() bool {
-	// log function name
-	hermetic := len(c.env.upValues) == 0
-	fmt.Println("function loc, isHermetic", c.function.LocRange.FileName, c.function.LocRange.Begin.Line, c.function.LocRange.Begin.Column, hermetic)
-	return hermetic
+	// Simple heuristic: check if there are any captured variables or self binding
+	// If upValues is not empty, the function captures external context
+	if len(c.env.upValues) > 0 {
+		return false
+	}
+
+	// If there's a self binding, the function has access to object context
+	if c.env.selfBinding.self != nil {
+		return false
+	}
+
+	// Additionally check for $ references in the AST (global context)
+	return !hasGlobalOrSelfReference(c.function.Body)
+}
+
+// hasGlobalOrSelfReference does a deep traversal to check for $ or self references
+func hasGlobalOrSelfReference(node ast.Node) bool {
+	if node == nil {
+		return false
+	}
+
+	switch n := node.(type) {
+	case *ast.Var:
+		// Check for $ (global context) or self
+		if n.Id == "$" {
+			return true
+		}
+	case *ast.Self:
+		// Direct self reference
+		return true
+	case *ast.SuperIndex, *ast.InSuper:
+		// Super implies object context
+		return true
+	}
+
+	// Recursively check all children
+	for _, child := range toolutils.Children(node) {
+		if hasGlobalOrSelfReference(child) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // generateCacheKey creates a cache key for a hermetic function call
