@@ -194,7 +194,7 @@ type closure struct {
 // isHermetic returns true if the closure has no external references
 func (c *closure) isHermetic() bool {
 	// log function name
-	hermetic := len(c.env.upValues) == 0 && c.env.selfBinding.self == nil
+	hermetic := len(c.env.upValues) == 0
 	fmt.Println("function loc, isHermetic", c.function.LocRange.FileName, c.function.LocRange.Begin.Line, c.function.LocRange.Begin.Column, hermetic)
 	return hermetic
 }
